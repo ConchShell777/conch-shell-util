@@ -97,3 +97,19 @@ python -m unittest -v test_comfyui_batch.py test_comfyui_task_logs.py
 ```
 
 ShowText 返回格式参考：[ComfyUI-Custom-Scripts 的 ShowText 源码](https://github.com/pythongosssss/ComfyUI-Custom-Scripts/blob/main/py/show_text.py)。
+
+## 一键启动与自动恢复参数
+
+Windows 下双击同目录的 start_comfyui_batch.bat 即可启动界面。启动器会先尝试 Python Launcher 的 py -3，再尝试 PATH 中的 python，要求 Python 3.10+ 且包含 Tkinter。未找到合适环境或启动报错时会保留窗口显示提示。启动器与 comfyui_batch.py 必须放在同一个文件夹；ComfyUI 仍需自行启动。
+
+占位符值、string/int 类型、固定/随机/递增模式，以及服务地址、ComfyUI 目录、重复次数和等待上限会自动保存到脚本旁的 last_session.json。修改后约 0.5 秒保存，正常关闭窗口时再次保存。下次启动自动读取，导入并勾选工作流后，同名占位符自动填入上次的值；暂时取消勾选不会删除已保存的参数。工作流目录和文件勾选不自动恢复，也不会自动执行任务。
+
+缓存仅保存在本机，已加入 .gitignore。移动工具时如需保留参数，一起复制 last_session.json；删除该文件可清除记忆。脚本目录需要可写。仍可通过“保存配置”和“加载配置”备份、切换多套参数。缓存包含实际提示词和值，请按需保管。
+
+所有离线测试（包含界面重启与自动保存测试）可运行：
+
+```text
+python -m unittest discover -s comfyui-batch -p "test_*.py" -v
+```
+
+上面的命令在仓库根目录运行；在工具目录运行时将 -s comfyui-batch 改为 -s .。

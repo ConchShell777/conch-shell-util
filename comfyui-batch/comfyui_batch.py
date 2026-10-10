@@ -17,6 +17,7 @@ from tkinter.scrolledtext import ScrolledText
 
 TOKEN = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 MAX_SEED = 2**64 - 1
+STATE_FILE = Path(__file__).resolve().parent / 'last_session.json'
 
 def output_strings(value, path=()):
     if isinstance(value, str):
@@ -363,8 +364,66 @@ class BatchApp(tk.Tk):
         self.timeout = tk.StringVar(value='3600')
         self.status = tk.StringVar(value='请导入工作流文件夹')
         self.make_ui()
-        self.after(100, self.drain)
+        self.autosave_job = None
+        self.last_saved_state = None
+        self.restore_session()
+        for variable in (self.install, self.url, self.repeat, self.timeout):
+            variable.trace_add('write', self.schedule_autosave)
+        self.drain_job = self.after(100, self.drain)
         self.protocol('WM_DELETE_WINDOW', self.close)
+
+    def session_data(self):
+        self.capture_params()
+        return {'version': 1, 'url': self.url.get(), 'install': self.install.get(),
+                'repeat': self.repeat.get(), 'timeout': self.timeout.get(),
+                'parameters': copy.deepcopy(self.params)}
+
+    def restore_session(self):
+        if not STATE_FILE.exists():
+            return
+        try:
+            data = read_json(STATE_FILE)
+            params = data['parameters']
+            if not isinstance(params, dict):
+                raise ValueError('parameters 必须是对象')
+            for name, setting in params.items():
+                if not isinstance(setting, dict) or setting.get('type') not in ('string', 'int') or not isinstance(setting.get('value'), str) or setting.get('mode', '固定') not in ('固定', '随机', '递增'):
+                    raise ValueError(f'参数配置无效：{name}')
+            self.params = params
+            self.url.set(str(data.get('url', self.url.get())))
+            self.install.set(str(data.get('install', '')))
+            self.repeat.set(str(data.get('repeat', '1')))
+            self.timeout.set(str(data.get('timeout', '3600')))
+            self.last_saved_state = self.session_data()
+            self.log(f'已恢复上次填写的 {len(params)} 个占位符参数；导入并勾选工作流后自动填入')
+        except Exception as exc:
+            self.log(f'无法读取上次参数，使用默认设置：{exc}')
+
+    def schedule_autosave(self, *args):
+        if self.autosave_job is not None:
+            self.after_cancel(self.autosave_job)
+        self.autosave_job = self.after(500, self.autosave_session)
+
+    def autosave_session(self):
+        self.autosave_job = None
+        data = self.session_data()
+        if data == self.last_saved_state:
+            return True
+        try:
+            temp = STATE_FILE.with_suffix('.json.tmp')
+            temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            temp.replace(STATE_FILE)
+            self.last_saved_state = data
+            return True
+        except Exception as exc:
+            self.log(f'参数自动保存失败：{exc}')
+            return False
+
+    def parameter_edited(self, event):
+        text = event.widget
+        if text.edit_modified():
+            text.edit_modified(False)
+            self.schedule_autosave()
 
     def make_ui(self):
         top = ttk.Frame(self, padding=10)
@@ -531,6 +590,7 @@ class BatchApp(tk.Tk):
                 mark = '⚠'
             self.tree.item(item, text=f'{mark} {path.name}')
         self.status.set(f'已选择 {len(self.selected)} / {len(self.files)} 个文件')
+        self.schedule_autosave()
 
     def show_file(self, event=None):
         path = self.items.get(self.tree.focus())
@@ -571,6 +631,10 @@ class BatchApp(tk.Tk):
             self.rows[name] = row
             types.bind('<<ComboboxSelected>>', lambda e, r=row: self.update_mode(r))
             self.update_mode(row)
+            text.edit_modified(False)
+            text.bind('<<Modified>>', self.parameter_edited)
+            kind.trace_add('write', self.schedule_autosave)
+            mode.trace_add('write', self.schedule_autosave)
 
     def update_mode(self, row):
         if row['type'].get() == 'string':
@@ -611,6 +675,7 @@ class BatchApp(tk.Tk):
             self.repeat.set(str(data.get('repeat', '1')))
             self.timeout.set(str(data.get('timeout', '3600')))
             self.rebuild_params()
+            self.schedule_autosave()
             self.log('参数配置已加载；请另行导入工作流文件夹')
         except Exception as exc:
             messagebox.showerror('配置无效', str(exc))
@@ -780,13 +845,20 @@ class BatchApp(tk.Tk):
                     self.status.set('批次已结束，详见日志和结果报告')
         except queue.Empty:
             pass
-        self.after(100, self.drain)
+        self.drain_job = self.after(100, self.drain)
 
     def close(self):
         if self.busy:
             messagebox.showinfo('正在执行', '请先停止后续执行，等待已提交任务结束并保存报告后再关闭。')
         else:
-            self.destroy()
+            if self.autosave_job is not None:
+                self.after_cancel(self.autosave_job)
+                self.autosave_job = None
+            if self.autosave_session():
+                self.after_cancel(self.drain_job)
+                self.destroy()
+            else:
+                messagebox.showerror('参数未保存', '无法保存上次参数，请检查脚本目录写入权限或使用“保存配置”备份。')
 
 
 if __name__ == '__main__':

@@ -3,3 +3,5 @@
 .venv/
 venv/
 batch_results/
+last_session.json
+last_session.json.tmp

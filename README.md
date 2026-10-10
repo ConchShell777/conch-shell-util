@@ -1,4 +1,4 @@
-﻿# conch-shell-util
+# conch-shell-util
 
 一些实用小工具。
 
@@ -13,5 +13,7 @@
 ```sh
 python comfyui-batch/comfyui_batch.py
 ```
+
+Windows 下也可双击 `comfyui-batch/start_comfyui_batch.bat` 一键启动。占位符参数会自动保存，并在下次启动后按同名参数恢复。
 
 具体操作、兼容范围和测试方法见工具目录中的使用说明。
